@@ -24,7 +24,8 @@ module Curator
           with_config do
             Curator.configure(:cassandra) do |config|
               config.environment = "test"
-              config.client      = ::Cassandra.connect
+              config.keyspace = "curator"
+              config.client = ::Cassandra.connect
             end
           end
 

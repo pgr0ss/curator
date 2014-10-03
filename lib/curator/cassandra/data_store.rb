@@ -9,14 +9,8 @@ module Curator
         return @client = Curator.config.client if Curator.config.client
 
         yml_config = YAML.load(File.read(Curator.config.cassandra_config_file))[Curator.config.environment]
-        cluster = ::Cassandra.connect(yml_config)
+        @client = ::Cassandra.connect(yml_config)
         @keyspace_with_environment = Curator.config.keyspace + "_" + Curator.config.environment
-
-        @client = cluster.connect
-        @client.execute(<<-END)
-        CREATE KEYSPACE IF NOT EXISTS #{@keyspace_with_environment} WITH REPLICATION = {'class':'SimpleStrategy','replication_factor':3};
-        END
-        @client.execute("USE #{@keyspace_with_environment}")
         @client
       end
 
@@ -31,14 +25,32 @@ module Curator
       def save(options)
         columns = options[:value].keys.map(&:to_s)
         question_marks = options[:value].size.times.map { "?" }.join(",")
-        statement = @client.prepare("INSERT INTO #{options[:collection_name]} (#{columns}) VALUES (#{question_marks})")
-        statement.execute(*options[:value].values)
+        statement = _session.prepare("INSERT INTO #{options[:collection_name]} (#{columns}) VALUES (#{question_marks})")
+        _session.execute(statement, *options[:value].values)
       end
 
       def reset!
-        @client.keyspace(@keyspace_with_environment).each_table do |table|
-          @client.execute("TRUNCATE #{table.name}")
+        keyspace = client.keyspace(_keyspace_with_environment)
+        if keyspace
+          keyspace.each_table do |table|
+            client.execute("TRUNCATE #{table.name}")
+          end
         end
+      end
+
+      def _keyspace_with_environment
+        Curator.config.keyspace + "_" + Curator.config.environment
+      end
+
+      def _session
+        return @session if @session
+
+        @session = client.connect
+        @session.execute(<<-END)
+        CREATE KEYSPACE IF NOT EXISTS #{_keyspace_with_environment} WITH REPLICATION = {'class':'SimpleStrategy','replication_factor':3};
+        END
+        @session.execute("USE #{_keyspace_with_environment}")
+        @session
       end
     end
   end
