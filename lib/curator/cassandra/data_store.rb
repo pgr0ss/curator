@@ -13,12 +13,20 @@ module Curator
         @client
       end
 
-      def settings(collection_name)
-        raise StandardError, "Not implemented yet"
+      def delete(table_name, key)
+        _execute("DELETE FROM #{table_name} WHERE key = ?", key)
       end
 
-      def update_settings!(collection_name, updated_settings)
-        raise StandardError, "Not implemented yet"
+      def find_all(table_name)
+        _execute("SELECT * FROM #{table_name}").rows.map(&:with_indifferent_access)
+      end
+
+      def find_by_attribute(table_name, column, value)
+        _execute("SELECT * FROM #{table_name} WHERE #{column} = ?", value).rows.map(&:with_indifferent_access)
+      end
+
+      def find_by_key(table_name, key)
+        _execute("SELECT * FROM #{table_name}").first
       end
 
       def save(options)
@@ -26,34 +34,42 @@ module Curator
 
         columns = options[:value].keys.map(&:to_s).join(",")
         question_marks = options[:value].size.times.map { "?" }.join(",")
-        statement = _session.prepare("INSERT INTO #{options[:collection_name]} (key, #{columns}) VALUES (?, #{question_marks})")
-        _session.execute(statement, *options[:value].values.unshift(options[:key]))
+        _execute("INSERT INTO #{options[:collection_name]} (key, #{columns}) VALUES (?, #{question_marks})", *options[:value].values.unshift(options[:key]))
       end
 
       def reset!
         if _keyspace
           _keyspace.each_table do |table|
-            _session.execute("DROP TABLE #{table.name}")
+            _execute("DROP TABLE #{table.name}")
           end
         end
       end
 
       def _create_table_if_needed(options)
         table_name = options[:collection_name]
+
         return if _keyspace && _keyspace.tables.map(&:name).include?(table_name)
 
         columns = options[:value].keys.map { |key| "#{key} #{_cql_type(options[:value][key])}" }.join(",")
 
-        _session.execute(<<-CQL)
+        _execute(<<-CQL)
           CREATE TABLE #{table_name} (
             key text PRIMARY KEY,
             #{columns}
           )
         CQL
+
+        (options[:index] || {}).keys.each do |indexed_column|
+          _execute("CREATE INDEX ON #{table_name} (#{indexed_column})")
+        end
+      end
+
+      def _execute(*args)
+        _session.execute(*args)
       end
 
       def _keyspace
-        @keyspace ||= client.keyspace(_keyspace_name)
+        @keyspace = client.keyspace(_keyspace_name)
       end
 
       def _keyspace_name

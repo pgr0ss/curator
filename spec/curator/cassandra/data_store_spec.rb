@@ -11,13 +11,6 @@ module Curator
 
       let(:data_store) { DataStore.new }
 
-      it "deletes an object by key" do
-        data_store.save(:collection_name => "fake_things", :key => "some_key", :value => {"k" => "v"})
-        data_store.find_by_key("fake_things", "some_key").should_not be_nil
-        data_store.delete("fake_things", "some_key")
-        data_store.find_by_key("fake_things", "some_key").should be_nil
-      end
-
       with_config do
         Curator.configure(:cassandra) do |config|
           config.environment = "test"
